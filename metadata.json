@@ -1,0 +1,5 @@
+{
+  "name": "PI_Qualytics Data Quality Platform",
+  "description": "An enterprise-grade Data Quality monitoring platform built on Snowflake-native architecture, providing real-time strategic, business, and technical metrics.",
+  "requestFramePermissions": []
+}
