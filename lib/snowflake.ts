@@ -109,7 +109,7 @@ export async function createSnowflakeConnection(config: SnowflakeConfig): Promis
       authenticator: 'SNOWFLAKE',
     });
 
-    connection.connect((err, conn) => {
+    connection.connect((err: any, conn: any) => {
       if (err) {
         console.error('Failed to connect to Snowflake:', err);
         reject(err);
@@ -144,7 +144,7 @@ export async function createSnowflakeConnection(config: SnowflakeConfig): Promis
 
             conn.execute({
               sqlText: setupCommands[commandIndex],
-              complete: (err, stmt) => {
+              complete: (err: any, stmt: any) => {
                 if (err) {
                   console.error(`Error executing setup command "${setupCommands[commandIndex]}":`, err);
                   // Continue with next command even if one fails
@@ -170,7 +170,7 @@ export async function createSnowflakeConnection(config: SnowflakeConfig): Promis
  * Ensures the connection context (warehouse, database, schema) is set
  */
 export async function ensureConnectionContext(
-  connection: snowflake.Connection,
+  connection: any, // snowflake.Connection
   config: SnowflakeConfig
 ): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -204,7 +204,7 @@ export async function ensureConnectionContext(
 
       connection.execute({
         sqlText: commands[commandIndex],
-        complete: (err) => {
+        complete: (err: any) => {
           if (err) {
             console.error(`Error setting context "${commands[commandIndex]}":`, err);
             // Continue anyway - might already be set
@@ -220,10 +220,10 @@ export async function ensureConnectionContext(
 }
 
 /**
- * Executes a SQL query against Snowflake and returns the results
+ * Executes a SQL query against Snowflake and returns the results formatted as columns and rows
  */
 export function executeQuery(
-  connection: snowflake.Connection,
+  connection: any, // snowflake.Connection
   sqlText: string,
   binds?: any[] // Optional bind parameters
 ): Promise<QueryResult> {
@@ -231,7 +231,7 @@ export function executeQuery(
     connection.execute({
       sqlText,
       binds, // Pass binds to snowflake driver
-      complete: (err, stmt, rows) => {
+      complete: (err: any, stmt: any, rows: any[]) => {
         if (err) {
           console.error('Failed to execute query:', err);
           reject(err);
@@ -258,11 +258,36 @@ export function executeQuery(
 }
 
 /**
+ * Executes a SQL query and returns rows as objects (key-value pairs)
+ * This is preferred when you need to access columns by name
+ */
+export function executeQueryObjects(
+  connection: any, // snowflake.Connection
+  sqlText: string,
+  binds?: any[]
+): Promise<any[]> {
+  return new Promise((resolve, reject) => {
+    connection.execute({
+      sqlText,
+      binds,
+      complete: (err: any, stmt: any, rows: any[]) => {
+        if (err) {
+          console.error('Failed to execute query objects:', err);
+          reject(err);
+        } else {
+          resolve(rows || []);
+        }
+      },
+    });
+  });
+}
+
+/**
  * Gets Snowflake configuration from environment variables
  */
 export function getSnowflakeConfigFromEnv(): SnowflakeConfig {
   const account = process.env.SNOWFLAKE_ACCOUNT;
-  const username = process.env.SNOWFLAKE_USERNAME;
+  const username = process.env.SNOWFLAKE_USER || process.env.SNOWFLAKE_USERNAME; // Support both naming conventions
   const password = process.env.SNOWFLAKE_PASSWORD;
   const warehouse = process.env.SNOWFLAKE_WAREHOUSE;
   const database = process.env.SNOWFLAKE_DATABASE;
@@ -290,10 +315,10 @@ export function getSnowflakeConfigFromEnv(): SnowflakeConfig {
  * Connection pool manager for reusing connections
  */
 class SnowflakeConnectionPool {
-  private connection: snowflake.Connection | null = null;
+  private connection: any = null;
   private config: SnowflakeConfig | null = null;
 
-  async getConnection(config?: SnowflakeConfig): Promise<snowflake.Connection> {
+  async getConnection(config?: SnowflakeConfig): Promise<any> {
     // If no config provided, try to use existing config or env vars
     if (!config) {
       if (this.config) {
@@ -343,7 +368,7 @@ class SnowflakeConnectionPool {
   async closeConnection(): Promise<void> {
     if (this.connection) {
       return new Promise((resolve, reject) => {
-        this.connection!.destroy((err) => {
+        this.connection!.destroy((err: any) => {
           if (err) {
             reject(err);
           } else {
@@ -367,4 +392,3 @@ class SnowflakeConnectionPool {
 
 // Singleton instance
 export const snowflakePool = new SnowflakeConnectionPool();
-

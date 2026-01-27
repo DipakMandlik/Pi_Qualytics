@@ -31,49 +31,82 @@ export async function POST(request: NextRequest) {
         const context = await buildObservabilityContext(database, schema, table);
         console.log('[ANTIGRAVITY] Context built');
 
-        // Step 2: Use Ollama for insight generation
-        const { introspectSchema } = await import('@/lib/antigravity/schema-reader');
-        const { executeWithOllama } = await import('@/antigravity/engine/ollama_execution_engine');
+        // Step 2: Generate insight using Gemini (primary) or Ollama (fallback)
+        const contextFormatted = formatContextForAI(context);
 
-        const schemaRegistry = await introspectSchema(database, [schema]);
+        // Try Gemini first
+        let insight: any = null;
+        let usedProvider = 'gemini';
 
-        // Generate insight question based on context
-        const question = generateInsightQuestion(context);
+        try {
+            const aiInsight = await generateInsight(contextFormatted, apiKey);
 
-        const result = await executeWithOllama(question, assetId, schemaRegistry);
-
-        // Strict Mode: No fallbacks
-        if (result.status !== 'SUCCESS') {
-            console.error('[ANTIGRAVITY] Ollama insight generation failed:', result.error);
-            return NextResponse.json({
-                success: false,
-                error: result.error?.message || 'Ollama insight generation failed',
-                data: {
-                    stored: false,
-                    status: result.status,
-                    hint: result.error?.hint
-                }
-            }, { status: result.status === 'OLLAMA_UNAVAILABLE' ? 503 : 400 });
+            if (aiInsight) {
+                insight = {
+                    type: aiInsight.type,
+                    summary: aiInsight.whatHappened || aiInsight.summary || 'Insight generated',
+                    bullets: [
+                        aiInsight.whyItHappened,
+                        aiInsight.whatIsImpacted,
+                        aiInsight.whatShouldBeDone
+                    ].filter(Boolean),
+                    severity: aiInsight.severity,
+                    isActionable: aiInsight.isActionable,
+                    details: {
+                        whyItHappened: aiInsight.whyItHappened,
+                        whatIsImpacted: aiInsight.whatIsImpacted,
+                        whatShouldBeDone: aiInsight.whatShouldBeDone
+                    }
+                };
+            }
+        } catch (geminiError: any) {
+            console.warn('[ANTIGRAVITY] Gemini failed, trying Ollama fallback:', geminiError.message);
         }
 
-        // Convert ExecutiveAnswer to insight format
-        const insight = {
-            type: (context.anomalyDetected ? 'ANOMALY' :
-                context.failedMetricsLast24h.length > 0 ? 'QUALITY' : 'FRESHNESS') as 'ANOMALY' | 'QUALITY' | 'FRESHNESS',
-            summary: result.interpretation?.whatHappened || 'Insight generated',
-            bullets: [
-                result.interpretation?.whyItHappened || '',
-                result.interpretation?.whatIsImpacted || '',
-                result.interpretation?.whatShouldBeDone || ''
-            ].filter(Boolean),
-            severity: result.interpretation?.severity || 'INFO',
-            isActionable: result.interpretation?.whatShouldBeDone ? true : false,
-            details: {
-                whyItHappened: result.interpretation?.whyItHappened,
-                whatIsImpacted: result.interpretation?.whatIsImpacted,
-                whatShouldBeDone: result.interpretation?.whatShouldBeDone
+        // Fallback to Ollama if Gemini failed
+        if (!insight) {
+            try {
+                const { introspectSchema } = await import('@/lib/antigravity/schema-reader');
+                const { executeWithOllama } = await import('@/antigravity/engine/ollama_execution_engine');
+
+                const schemaRegistry = await introspectSchema(database, [schema]);
+                const question = generateInsightQuestion(context);
+                const result = await executeWithOllama(question, assetId, schemaRegistry);
+
+                if (result.status === 'SUCCESS') {
+                    usedProvider = 'ollama';
+                    insight = {
+                        type: (context.anomalyDetected ? 'ANOMALY' :
+                            context.failedMetricsLast24h.length > 0 ? 'QUALITY' : 'FRESHNESS') as 'ANOMALY' | 'QUALITY' | 'FRESHNESS',
+                        summary: result.interpretation?.whatHappened || 'Insight generated',
+                        bullets: [
+                            result.interpretation?.whyItHappened || '',
+                            result.interpretation?.whatIsImpacted || '',
+                            result.interpretation?.whatShouldBeDone || ''
+                        ].filter(Boolean),
+                        severity: result.interpretation?.severity || 'INFO',
+                        isActionable: result.interpretation?.whatShouldBeDone ? true : false,
+                        details: {
+                            whyItHappened: result.interpretation?.whyItHappened,
+                            whatIsImpacted: result.interpretation?.whatIsImpacted,
+                            whatShouldBeDone: result.interpretation?.whatShouldBeDone
+                        }
+                    };
+                } else {
+                    throw new Error(result.error?.message || 'Ollama execution failed');
+                }
+            } catch (ollamaError: any) {
+                console.error('[ANTIGRAVITY] Both Gemini and Ollama failed');
+                return NextResponse.json({
+                    success: false,
+                    error: 'AI insight generation unavailable. Please ensure Gemini API key is configured or Ollama is running.',
+                    data: {
+                        stored: false,
+                        hint: 'Configure GEMINI_API_KEY in .env or start Ollama with: ollama serve'
+                    }
+                }, { status: 503 });
             }
-        };
+        }
 
         // Step 3: Store insight
 
@@ -88,6 +121,7 @@ export async function POST(request: NextRequest) {
             success: true,
             data: {
                 insight,
+                provider: usedProvider,
                 context: {
                     assetId: context.assetId,
                     qualityScore: context.latestMetrics.qualityScore,

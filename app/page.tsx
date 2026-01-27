@@ -162,9 +162,6 @@ export default function HomePage() {
           });
         }
         setAttentionItems(items);
-
-        // Last scan time is now set from checksData
-        // setLastScanTime('Just now');
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
       } finally {
@@ -178,36 +175,38 @@ export default function HomePage() {
   const handleRunScan = async () => {
     setIsScanning(true);
     try {
-      const response = await fetch('/api/dq/run-scan', { method: 'POST' });
-      const result = await response.json();
+      const response = await fetch('/api/dq/run-scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scanType: 'full' }),
+      });
 
+      const result = await response.json();
       if (result.success) {
-        // Refresh data
-        setRefreshKey(prev => prev + 1);
+        // Refresh metrics after scan
+        window.location.reload();
       } else {
-        console.error('Scan failed:', result.error);
-        alert('Scan failed: ' + (result.error?.message || 'Unknown error'));
+        alert('Scan failed: ' + result.error);
       }
     } catch (error) {
-      console.error('Error triggering scan:', error);
-      alert('Error triggering scan');
+      console.error('Error running scan:', error);
+      alert('Failed to run scan');
     } finally {
       setIsScanning(false);
     }
   };
 
-
   return (
-    <div className="flex h-screen overflow-hidden bg-white">
-      {/* Sidebar */}
-      <Sidebar />
+    <div className="flex flex-col h-screen overflow-hidden bg-white">
+      {/* Top Navigation */}
+      <TopNav />
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Top Navigation with Connect Button */}
-        <TopNav />
+      {/* Content Area with Sidebar */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Sidebar */}
+        <Sidebar />
 
-        {/* Main Content Area */}
+        {/* Main Content */}
         <main className="flex-1 overflow-y-auto">
           <div className="px-6 py-8">
             {/* Header */}

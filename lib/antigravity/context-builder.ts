@@ -65,34 +65,52 @@ export async function buildObservabilityContext(
 
     // 1. Get Quality Score from DQ_DAILY_SUMMARY (uses DQ_METRICS schema)
     try {
-        const scoreResult = await executeQuery(connection, `
-      SELECT DQ_SCORE
-      FROM DATA_QUALITY_DB.DQ_METRICS.DQ_DAILY_SUMMARY
-      WHERE UPPER(DATABASE_NAME) = '${database.toUpperCase()}'
-        AND UPPER(SCHEMA_NAME) = '${schema.toUpperCase()}'
-        AND UPPER(TABLE_NAME) = '${table.toUpperCase()}'
-        AND DQ_SCORE IS NOT NULL
-      ORDER BY SUMMARY_DATE DESC
-      LIMIT 1
-    `);
+        const scoreResult = await new Promise<any>((resolve, reject) => {
+            connection.execute({
+                sqlText: `
+                    SELECT DQ_SCORE
+                    FROM DATA_QUALITY_DB.DQ_METRICS.DQ_DAILY_SUMMARY
+                    WHERE UPPER(DATABASE_NAME) = ?
+                      AND UPPER(SCHEMA_NAME) = ?
+                      AND UPPER(TABLE_NAME) = ?
+                      AND DQ_SCORE IS NOT NULL
+                    ORDER BY SUMMARY_DATE DESC
+                    LIMIT 1
+                `,
+                binds: [database.toUpperCase(), schema.toUpperCase(), table.toUpperCase()],
+                complete: (err: any, stmt: any, rows: any) => {
+                    if (err) reject(err);
+                    else resolve({ rows: rows || [], columns: stmt?.getColumns() || [] });
+                }
+            });
+        });
         if (scoreResult.rows.length > 0) {
-            context.latestMetrics.qualityScore = parseFloat(scoreResult.rows[0][0]) || undefined;
+            context.latestMetrics.qualityScore = parseFloat(scoreResult.rows[0].DQ_SCORE || scoreResult.rows[0][0]) || undefined;
             context.metricsAvailable.push('quality_score');
         }
     } catch { /* Table might not exist */ }
 
     // 2. Get failed checks from DQ_CHECK_RESULTS (uses DQ_METRICS schema)
     try {
-        const failedResult = await executeQuery(connection, `
-      SELECT DISTINCT RULE_NAME
-      FROM DATA_QUALITY_DB.DQ_METRICS.DQ_CHECK_RESULTS
-      WHERE UPPER(DATABASE_NAME) = '${database.toUpperCase()}'
-        AND UPPER(SCHEMA_NAME) = '${schema.toUpperCase()}'
-        AND UPPER(TABLE_NAME) = '${table.toUpperCase()}'
-        AND CHECK_STATUS = 'FAILED'
-        AND CHECK_TIMESTAMP >= DATEADD(hour, -24, CURRENT_TIMESTAMP())
-    `);
-        context.failedMetricsLast24h = failedResult.rows.map((r: any[]) => r[0]);
+        const failedResult = await new Promise<any>((resolve, reject) => {
+            connection.execute({
+                sqlText: `
+                    SELECT DISTINCT RULE_NAME
+                    FROM DATA_QUALITY_DB.DQ_METRICS.DQ_CHECK_RESULTS
+                    WHERE UPPER(DATABASE_NAME) = ?
+                      AND UPPER(SCHEMA_NAME) = ?
+                      AND UPPER(TABLE_NAME) = ?
+                      AND CHECK_STATUS = 'FAILED'
+                      AND CHECK_TIMESTAMP >= DATEADD(hour, -24, CURRENT_TIMESTAMP())
+                `,
+                binds: [database.toUpperCase(), schema.toUpperCase(), table.toUpperCase()],
+                complete: (err: any, stmt: any, rows: any) => {
+                    if (err) reject(err);
+                    else resolve({ rows: rows || [], columns: stmt?.getColumns() || [] });
+                }
+            });
+        });
+        context.failedMetricsLast24h = failedResult.rows.map((r: any) => r.RULE_NAME || r[0]);
         if (context.failedMetricsLast24h.length > 0) {
             context.metricsAvailable.push('failed_checks');
         }
@@ -100,16 +118,25 @@ export async function buildObservabilityContext(
 
     // 3. Check for anomalies in column profile (high null rates)
     try {
-        const anomalyResult = await executeQuery(connection, `
-      SELECT COUNT(*) AS CNT
-      FROM DATA_QUALITY_DB.DQ_METRICS.DQ_COLUMN_PROFILE
-      WHERE UPPER(DATABASE_NAME) = '${database.toUpperCase()}'
-        AND UPPER(SCHEMA_NAME) = '${schema.toUpperCase()}'
-        AND UPPER(TABLE_NAME) = '${table.toUpperCase()}'
-        AND (NULL_COUNT * 100.0 / NULLIF(TOTAL_RECORDS, 0)) > 50
-        AND CREATED_AT >= DATEADD(day, -7, CURRENT_TIMESTAMP())
-    `);
-        const highNullCount = parseInt(anomalyResult.rows[0]?.[0] || '0', 10);
+        const anomalyResult = await new Promise<any>((resolve, reject) => {
+            connection.execute({
+                sqlText: `
+                    SELECT COUNT(*) AS CNT
+                    FROM DATA_QUALITY_DB.DQ_METRICS.DQ_COLUMN_PROFILE
+                    WHERE UPPER(DATABASE_NAME) = ?
+                      AND UPPER(SCHEMA_NAME) = ?
+                      AND UPPER(TABLE_NAME) = ?
+                      AND (NULL_COUNT * 100.0 / NULLIF(TOTAL_RECORDS, 0)) > 50
+                      AND CREATED_AT >= DATEADD(day, -7, CURRENT_TIMESTAMP())
+                `,
+                binds: [database.toUpperCase(), schema.toUpperCase(), table.toUpperCase()],
+                complete: (err: any, stmt: any, rows: any) => {
+                    if (err) reject(err);
+                    else resolve({ rows: rows || [], columns: stmt?.getColumns() || [] });
+                }
+            });
+        });
+        const highNullCount = parseInt(anomalyResult.rows[0]?.CNT || anomalyResult.rows[0]?.[0] || '0', 10);
         if (highNullCount > 0) {
             context.anomalyDetected = true;
             context.anomalyTrend = 'high_null_rate_detected';
@@ -119,32 +146,51 @@ export async function buildObservabilityContext(
 
     // 4. Get freshness from table metadata
     try {
-        const freshnessResult = await executeQuery(connection, `
-      SELECT TIMESTAMPDIFF(hour, LAST_ALTERED, CURRENT_TIMESTAMP()) AS HOURS_SINCE_UPDATE
-      FROM ${database}.INFORMATION_SCHEMA.TABLES
-      WHERE TABLE_SCHEMA = '${schema.toUpperCase()}'
-        AND TABLE_NAME = '${table.toUpperCase()}'
-    `);
+        const dbSchemaTable = `${database.toUpperCase()}.INFORMATION_SCHEMA.TABLES`;
+        const freshnessResult = await new Promise<any>((resolve, reject) => {
+            connection.execute({
+                sqlText: `
+                    SELECT TIMESTAMPDIFF(hour, LAST_ALTERED, CURRENT_TIMESTAMP()) AS HOURS_SINCE_UPDATE
+                    FROM IDENTIFIER(?)
+                    WHERE TABLE_SCHEMA = ?
+                      AND TABLE_NAME = ?
+                `,
+                binds: [dbSchemaTable, schema.toUpperCase(), table.toUpperCase()],
+                complete: (err: any, stmt: any, rows: any) => {
+                    if (err) reject(err);
+                    else resolve({ rows: rows || [], columns: stmt?.getColumns() || [] });
+                }
+            });
+        });
         if (freshnessResult.rows.length > 0) {
-            context.latestMetrics.freshnessHours = parseFloat(freshnessResult.rows[0][0]) || undefined;
+            context.latestMetrics.freshnessHours = parseFloat(freshnessResult.rows[0].HOURS_SINCE_UPDATE || freshnessResult.rows[0][0]) || undefined;
             context.metricsAvailable.push('freshness');
         }
     } catch { /* Ignore */ }
 
     // 5. Get row count from DQ_COLUMN_PROFILE (most recent profile)
     try {
-        const rowResult = await executeQuery(connection, `
-      SELECT TOTAL_RECORDS
-      FROM DATA_QUALITY_DB.DQ_METRICS.DQ_COLUMN_PROFILE
-      WHERE UPPER(DATABASE_NAME) = '${database.toUpperCase()}'
-        AND UPPER(SCHEMA_NAME) = '${schema.toUpperCase()}'
-        AND UPPER(TABLE_NAME) = '${table.toUpperCase()}'
-        AND TOTAL_RECORDS IS NOT NULL
-      ORDER BY CREATED_AT DESC
-      LIMIT 1
-    `);
+        const rowResult = await new Promise<any>((resolve, reject) => {
+            connection.execute({
+                sqlText: `
+                    SELECT TOTAL_RECORDS
+                    FROM DATA_QUALITY_DB.DQ_METRICS.DQ_COLUMN_PROFILE
+                    WHERE UPPER(DATABASE_NAME) = ?
+                      AND UPPER(SCHEMA_NAME) = ?
+                      AND UPPER(TABLE_NAME) = ?
+                      AND TOTAL_RECORDS IS NOT NULL
+                    ORDER BY CREATED_AT DESC
+                    LIMIT 1
+                `,
+                binds: [database.toUpperCase(), schema.toUpperCase(), table.toUpperCase()],
+                complete: (err: any, stmt: any, rows: any) => {
+                    if (err) reject(err);
+                    else resolve({ rows: rows || [], columns: stmt?.getColumns() || [] });
+                }
+            });
+        });
         if (rowResult.rows.length > 0) {
-            context.latestMetrics.rowCount = parseInt(rowResult.rows[0][0], 10) || undefined;
+            context.latestMetrics.rowCount = parseInt(rowResult.rows[0].TOTAL_RECORDS || rowResult.rows[0][0], 10) || undefined;
             context.metricsAvailable.push('row_count');
         }
     } catch { /* Ignore */ }

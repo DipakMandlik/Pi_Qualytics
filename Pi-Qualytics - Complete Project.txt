@@ -1,0 +1,517 @@
+Pi-Qualytics - Complete Project Deep Dive
+🎯 Project Overview
+Pi-Qualytics is an enterprise-grade Data Quality Management Platform built with modern web technologies and powered by Snowflake. It provides comprehensive data quality monitoring, automated profiling, AI-driven insights, and intelligent investigation capabilities.
+
+Core Value Proposition
+Automated Data Quality Monitoring: 65+ pre-configured rules across 6 quality dimensions
+AI-Powered Investigation: "Antigravity" AI engine for root cause analysis
+3-Layer Medallion Architecture: Bronze → Silver → Gold data transformation
+Real-time Dashboards: Executive scorecards and detailed quality metrics
+Scheduled Automation: Automated profiling and custom checks
+🏗️ Architecture Overview
+Technology Stack
+Frontend
+Framework: Next.js 16.1.1 (App Router)
+UI Library: React 19.2.3
+Styling: TailwindCSS 4.0 with custom design system
+Components: Radix UI primitives + shadcn/ui
+Charts: Recharts 3.6.0
+Icons: Lucide React
+Backend
+Runtime: Node.js (Next.js API Routes)
+Database: Snowflake (via snowflake-sdk 2.3.3)
+AI Integration:
+Google Gemini API (@google/generative-ai)
+Ollama (local LLM support)
+Connection Pooling: Custom singleton pool manager
+Data Layer (Snowflake)
+BANKING_DW (Business Data)
+├── BRONZE → Raw data layer (all STRING columns)
+├── SILVER → Cleansed, type-safe data with DQ scores
+└── GOLD → Analytics-ready views
+DATA_QUALITY_DB (DQ Framework)
+├── DQ_CONFIG → Rules, datasets, schedules
+├── DQ_METRICS → Results, profiling, summaries
+├── DQ_ENGINE → Stored procedures
+└── DB_METRICS → AI observability
+📂 Project Structure
+Pi-Qualytics-main/
+├── app/                          # Next.js App Router
+│   ├── api/                      # API Routes (65+ endpoints)
+│   │   ├── dq/                   # Data Quality APIs (28 endpoints)
+│   │   ├── snowflake/            # Snowflake connection APIs (17 endpoints)
+│   │   ├── antigravity/          # AI investigation APIs (7 endpoints)
+│   │   ├── observability/        # Metrics & monitoring (6 endpoints)
+│   │   └── scheduler/            # Schedule management
+│   ├── datasets/                 # Dataset detail pages
+│   ├── governance/               # Data governance UI
+│   ├── intelligence/             # AI insights UI
+│   └── page.tsx                  # Main dashboard
+│
+├── components/                   # React Components (45 files)
+│   ├── fields/                   # Form fields & inputs (10 components)
+│   ├── layout/                   # Layout components (Sidebar, TopNav)
+│   ├── dashboard/                # Dashboard widgets
+│   ├── ui/                       # Base UI components (13 shadcn components)
+│   ├── AntigravityInvestigation.tsx  # AI investigation modal
+│   └── AntigravityInsights.tsx   # AI insights panel
+│
+├── lib/                          # Utility Libraries (31 files)
+│   ├── antigravity/              # AI SQL generation engine (11 files)
+│   │   ├── sql-generator.ts     # AI-powered SQL generation
+│   │   ├── schema-reader.ts     # Schema introspection
+│   │   ├── intent-classifier.ts # Question intent analysis
+│   │   └── answer-interpreter.ts # Executive answer generation
+│   ├── snowflake.ts              # Snowflake connection manager
+│   ├── server-config.ts          # Server configuration
+│   ├── env-validator.ts          # Environment validation
+│   ├── cache.ts                  # Response caching
+│   ├── retry.ts                  # Retry logic
+│   └── job-queue.ts              # Background job processing
+│
+├── sql/production/               # Snowflake Setup Scripts (12 files)
+│   ├── 00_MASTER_SETUP.sql      # Setup guide
+│   ├── 01_Environment_Setup.sql  # Warehouses, databases, stages
+│   ├── 02_Data_Loading.sql       # CSV data loading
+│   ├── 03_Silver_Layer_Setup.sql # Type-safe transformations
+│   ├── 04_Gold_Layer_Setup.sql   # Analytics views
+│   ├── 05_Config_Tables.sql      # DQ configuration
+│   ├── 06_Metrics_Tables.sql     # Metrics tracking
+│   ├── 07_Populate_Configuration.sql # 65+ rule mappings
+│   ├── 08_Execution_Engine.sql   # Main DQ processor
+│   ├── 09_Profiling_Custom_Scanning.sql # Profiling procedures
+│   ├── 10_Scheduling_Tasks.sql   # Automated scheduling
+│   └── 11_Observability_AI_Insights.sql # AI insights generation
+│
+├── docs/                         # Documentation (18 files)
+│   ├── QUICKSTART.md            # 5-minute setup
+│   ├── SETUP_COMPLETE.md        # Comprehensive 12-step guide
+│   ├── ENVIRONMENT_SETUP.md     # Environment variables
+│   └── troubleshooting/         # 10 troubleshooting guides
+│
+├── scripts/                      # Utility scripts (19 files)
+├── public/                       # Static assets
+├── .env.local                    # Environment configuration
+├── package.json                  # Dependencies
+├── tsconfig.json                 # TypeScript config
+└── next.config.ts                # Next.js config
+🔑 Key Features & Capabilities
+1. Data Quality Monitoring
+Quality Dimensions (65+ Rules)
+Completeness (15 rules)
+
+Null checks on critical columns
+Required field validation
+Column-level completeness scoring
+Uniqueness (10 rules)
+
+Primary key validation
+Composite key checks
+Duplicate detection
+Validity (20 rules)
+
+Email format validation
+Phone number format
+Date format checks
+Allowed values validation
+Range checks
+Consistency (10 rules)
+
+Foreign key validation
+Cross-table relationships
+Logical consistency checks
+Freshness (5 rules)
+
+Load timestamp validation
+Data staleness detection
+SLA compliance
+Volume (5 rules)
+
+Row count anomaly detection
+Volume trend analysis
+Execution Modes
+Full Execution: All datasets, all rules
+Dataset-Specific: Single dataset profiling
+Rule-Type Filtering: Only specific quality dimensions
+Critical-Only: High-priority datasets
+Ad-Hoc Custom: Single rule with threshold override
+2. Antigravity AI Engine 🚀
+The crown jewel of the platform - an intelligent SQL generation and investigation system.
+
+Architecture
+User Question
+    ↓
+Intent Classifier (Gemini/Ollama)
+    ↓
+Schema Introspection (INFORMATION_SCHEMA)
+    ↓
+SQL Generator (AI-powered with validation)
+    ↓
+Query Execution (Snowflake)
+    ↓
+Answer Interpreter (Executive format)
+    ↓
+Executive Answer Block (UI)
+Key Components
+1. Intent Classification (lib/antigravity/intent-classifier.ts)
+
+Analyzes user questions to determine intent type
+Types: ROOT_CAUSE, TREND, COMPARISON, IMPACT, DISTRIBUTION
+Extracts metrics, time windows, and confidence scores
+2. Schema Reader (
+lib/antigravity/schema-reader.ts
+)
+
+Introspects Snowflake INFORMATION_SCHEMA
+Builds schema registry with fully qualified names
+Validates columns before SQL generation
+CRITICAL: Antigravity REFUSES to generate SQL without schema validation
+3. SQL Generator (
+lib/antigravity/sql-generator.ts
+)
+
+AI-powered SQL generation using Gemini
+Strict validation rules (no DROP, DELETE, INSERT, UPDATE)
+Fallback to templates disabled (Strict Gemini Mode)
+Multi-model support: gemini-1.5-flash, gemini-1.0-pro, gemini-pro
+4. Answer Interpreter (lib/antigravity/answer-interpreter.ts)
+
+Transforms raw SQL results into executive summaries
+Generates 4-part answers:
+What Happened: Factual summary
+Why It Happened: Root cause analysis
+What Is Impacted: Business impact
+What Should Be Done: Actionable recommendations
+5. Investigation UI (
+components/AntigravityInvestigation.tsx
+)
+
+Modal-based investigation interface
+Guided questions + free-form input
+Intent preview before execution
+AI provider selection (Gemini/Ollama)
+Executive answer blocks with collapsible charts
+AI Provider Support
+Gemini (Fast, cloud-based)
+
+Requires GEMINI_API_KEY
+Models: gemini-1.5-flash, gemini-1.0-pro
+Automatic retry with rate limit handling
+Ollama (Private, local)
+
+Requires local Ollama server
+Health check before execution
+Offline detection with user guidance
+3. Dashboard & Visualization
+Main Dashboard (
+app/page.tsx
+)
+Real-time KPI Cards:
+Overall Quality Score (circular gauge)
+Coverage Score (shield icon)
+Validity Score (alert triangle)
+Attention Items: Critical issues requiring action
+Last Scan Time: IST timezone display
+Scan Now: Manual trigger for DQ checks
+Circular Metric Cards (
+components/dashboard/CircularMetricCard.tsx
+)
+LED-style circular progress indicators
+Trend indicators (vs last week)
+Color-coded by metric type (green, blue, amber)
+Animated transitions
+Charts & Visualizations
+Line charts for trends
+Bar charts for distributions
+Gauge charts for scores
+Reference lines for thresholds
+4. Scheduling System
+Schedule Types
+Profiling: Automated column profiling
+Custom Checks: Rule-based validation
+Full Scans: All rules execution
+Anomaly Detection: Volume/freshness checks
+Frequency Options
+Hourly
+Daily (with time selection)
+Weekly (with day selection)
+Implementation
+Snowflake TASKS for execution
+SP_PROCESS_DUE_SCHEDULES: Task processor (runs every minute)
+Schedule configuration in DQ_CONFIG.SCAN_SCHEDULES
+Execution tracking in DQ_METRICS.DQ_RUN_CONTROL
+5. API Architecture
+Connection Management (
+lib/snowflake.ts
+)
+Singleton Connection Pool: Reuses connections
+Auto-reconnect: Validates connection health
+Context Management: Warehouse, database, schema setup
+Error Handling: Comprehensive error messages
+Configuration (
+lib/server-config.ts
+)
+In-Memory Config: Runtime configuration
+Environment Fallback: Persistent config from .env
+Config Source Tracking: Debug which config is active
+Caching (
+lib/cache.ts
+)
+In-memory cache for API responses
+Configurable TTL (default: 5 minutes)
+Cache invalidation on data changes
+Retry Logic (
+lib/retry.ts
+)
+Exponential backoff
+Configurable max retries
+Error-specific retry strategies
+🗄️ Database Schema
+DQ_CONFIG Schema (Configuration)
+-- Rule definitions
+RULE_MASTER
+├── RULE_ID (PK)
+├── RULE_NAME
+├── RULE_TYPE (Completeness, Uniqueness, etc.)
+├── SEVERITY (Critical, High, Medium, Low)
+└── IS_ACTIVE
+-- SQL templates for dynamic rule execution
+RULE_SQL_TEMPLATE
+├── RULE_ID (FK)
+├── SQL_TEMPLATE (Parameterized SQL)
+└── PARAMETERS (JSON)
+-- Dataset configuration
+DATASET_CONFIG
+├── DATASET_ID (PK)
+├── DATABASE_NAME
+├── SCHEMA_NAME
+├── TABLE_NAME
+├── IS_CRITICAL
+└── BUSINESS_OWNER
+-- Rule mappings (65+ mappings)
+DATASET_RULE_CONFIG
+├── CONFIG_ID (PK)
+├── DATASET_ID (FK)
+├── RULE_ID (FK)
+├── COLUMN_NAME
+├── THRESHOLD_VALUE
+└── IS_ACTIVE
+-- Scheduling
+SCAN_SCHEDULES
+├── SCHEDULE_ID (PK)
+├── DATASET_ID (FK)
+├── SCAN_TYPE (Profiling, Custom, Full)
+├── FREQUENCY (Hourly, Daily, Weekly)
+├── CRON_EXPRESSION
+└── IS_ACTIVE
+DQ_METRICS Schema (Results & Tracking)
+-- Execution tracking
+DQ_RUN_CONTROL
+├── RUN_ID (PK)
+├── DATASET_ID (FK)
+├── START_TS
+├── END_TS
+├── STATUS (Running, Completed, Failed)
+└── TRIGGERED_BY (Scheduled, Manual, API)
+-- Check results
+DQ_CHECK_RESULTS
+├── CHECK_ID (PK)
+├── RUN_ID (FK)
+├── RULE_ID (FK)
+├── DATASET_ID (FK)
+├── COLUMN_NAME
+├── CHECK_TIMESTAMP
+├── PASSED (Boolean)
+├── FAILED_COUNT
+├── TOTAL_COUNT
+└── DQ_SCORE (0-100)
+-- Failed record details
+DQ_FAILED_RECORDS
+├── FAILED_RECORD_ID (PK)
+├── CHECK_ID (FK)
+├── RECORD_KEY
+├── FAILED_VALUE
+└── FAILURE_REASON
+-- Column profiling
+DQ_COLUMN_PROFILE
+├── PROFILE_ID (PK)
+├── DATASET_ID (FK)
+├── COLUMN_NAME
+├── PROFILE_TIMESTAMP
+├── DISTINCT_COUNT
+├── NULL_COUNT
+├── MIN_VALUE
+├── MAX_VALUE
+└── AVG_VALUE
+-- Aggregated summaries
+DQ_DAILY_SUMMARY
+DQ_WEEKLY_SUMMARY
+DQ_MONTHLY_SUMMARY
+DQ_QUARTERLY_SUMMARY
+DB_METRICS Schema (AI Observability)
+-- Unified metrics for AI
+DQ_METRICS
+├── METRIC_ID (PK)
+├── ASSET_ID (DATABASE.SCHEMA.TABLE)
+├── METRIC_NAME
+├── METRIC_VALUE
+├── METRIC_TIMESTAMP
+└── METADATA (JSON)
+-- AI-generated insights
+DQ_AI_INSIGHTS
+├── INSIGHT_ID (PK)
+├── ASSET_ID
+├── INSIGHT_TYPE (Anomaly, Trend, Recommendation)
+├── SEVERITY (Critical, Warning, Info)
+├── SUMMARY
+├── CONFIDENCE_SCORE
+└── CREATED_AT
+-- Schema registry view for AI
+V_SCHEMA_REGISTRY
+├── DATABASE_NAME
+├── SCHEMA_NAME
+├── TABLE_NAME
+├── COLUMN_NAME
+├── DATA_TYPE
+└── IS_NULLABLE
+🔄 Data Flow
+1. Data Ingestion Flow
+CSV Files
+    ↓
+Snowflake Stage (@BANKING_DW.BRONZE.CSV_STAGE)
+    ↓
+BRONZE Layer (Raw, all STRING columns)
+    ↓
+SP_TRANSFORM_BRONZE_TO_SILVER
+    ↓
+SILVER Layer (Type-safe, with DQ scores)
+    ↓
+GOLD Layer (Analytics views)
+2. DQ Check Execution Flow
+Trigger (Manual/Scheduled/API)
+    ↓
+SP_EXECUTE_DQ_CHECKS
+    ↓
+Read DATASET_RULE_CONFIG
+    ↓
+For each rule:
+    ├── Get SQL template
+    ├── Substitute parameters
+    ├── Execute query
+    ├── Calculate DQ score
+    └── Insert into DQ_CHECK_RESULTS
+    ↓
+Update DQ_RUN_CONTROL (status, end time)
+    ↓
+Generate DQ_DAILY_SUMMARY
+3. AI Investigation Flow
+User Question
+    ↓
+/api/antigravity/ask-question
+    ↓
+Intent Classification (Gemini)
+    ↓
+Schema Introspection
+    ↓
+SQL Generation (AI with validation)
+    ↓
+Query Execution (Snowflake)
+    ↓
+Answer Interpretation
+    ↓
+Executive Answer Block (UI)
+4. Profiling Flow
+Trigger (Manual/Scheduled)
+    ↓
+SP_PROFILE_DATASET
+    ↓
+For each column:
+    ├── COUNT(DISTINCT column)
+    ├── COUNT(*) WHERE column IS NULL
+    ├── MIN(column), MAX(column), AVG(column)
+    └── Data type distribution
+    ↓
+Insert into DQ_COLUMN_PROFILE
+    ↓
+Display in Column Statistics UI
+🔌 API Endpoints Summary
+Data Quality APIs (/api/dq/) - 28 endpoints
+Overall score, KPIs, check results
+Run scans, profiling, custom rules
+Historical data, trends, anomalies
+Failed records, SLA compliance
+Snowflake APIs (/api/snowflake/) - 17 endpoints
+Connection management
+Database/schema/table listing
+Query execution
+Context management
+Antigravity APIs (/api/antigravity/) - 7 endpoints
+Investigation sessions
+Question answering
+Evidence retrieval
+Schema registry for AI
+Observability APIs (/api/observability/) - 6 endpoints
+Metrics ingestion
+Insights generation
+Historical backfill
+🎨 UI Component Hierarchy
+App Layout
+├── Sidebar (Navigation)
+├── TopNav (Connection status)
+└── Main Content
+    ├── Dashboard (Home page)
+    │   ├── CircularMetricCard (3x KPIs)
+    │   └── Attention Items
+    ├── Dataset Detail Pages
+    │   ├── ColumnDetailPanel
+    │   ├── ColumnStatistics
+    │   ├── ColumnCheckResults
+    │   └── ScheduleForm
+    └── AI Features
+        ├── AntigravityInvestigation (Modal)
+        ├── AntigravityInsights (Panel)
+        └── ExecutiveAnswerBlock
+🔧 Configuration & Environment
+Required Environment Variables
+SNOWFLAKE_ACCOUNT=abc123def.us-east-1
+SNOWFLAKE_USER=your_username
+SNOWFLAKE_PASSWORD=your_password
+SNOWFLAKE_WAREHOUSE=COMPUTE_WH
+SNOWFLAKE_DATABASE=BANKING_DW
+DQ_DATABASE=DATA_QUALITY_DB
+Optional Variables
+GEMINI_API_KEY=your_gemini_api_key
+OLLAMA_BASE_URL=http://localhost:11434
+NODE_ENV=development
+PORT=3000
+🚀 Quick Start
+# 1. Install dependencies
+npm install
+# 2. Configure environment
+cp .env.example .env
+# Edit .env with your Snowflake credentials
+# 3. Run Snowflake setup scripts (in order)
+# Execute sql/production/01-11_*.sql in Snowflake
+# 4. Start development server
+npm run dev
+# 5. Access application
+# Open http://localhost:3000
+📊 Key Metrics
+Total Files: ~150+
+Lines of Code: ~15,000+
+API Endpoints: 65+
+React Components: 45+
+SQL Scripts: 12 production scripts
+DQ Rules: 65+ pre-configured
+Documentation Pages: 18+
+🏆 Key Strengths
+Comprehensive DQ Coverage: 65+ rules across 6 dimensions
+AI-Powered Investigation: Unique Antigravity engine
+Production-Ready: Complete with error handling, retry logic, caching
+Well-Documented: Extensive documentation and troubleshooting guides
+Modern Stack: Latest Next.js, React, TypeScript
+Scalable Architecture: Connection pooling, caching, background jobs
+Enterprise-Grade: Snowflake integration, RBAC, audit trails
+Last Updated: January 27, 2026
+Version: 1.0.0
+Maintained By: Pi-Qualytics Team

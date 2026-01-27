@@ -41,6 +41,7 @@ export function AntigravityInsights({ database, schema, table }: AntigravityInsi
     // Investigation mode state
     const [isInvestigating, setIsInvestigating] = useState(false);
     const [investigationInsight, setInvestigationInsight] = useState<Insight | null>(null);
+    const [lastProvider, setLastProvider] = useState<string>('AI');
 
     // Fetch existing insights on mount
     useEffect(() => {
@@ -77,6 +78,7 @@ export function AntigravityInsights({ database, schema, table }: AntigravityInsi
             const result = await response.json();
             if (result.success) {
                 setLastGenerated(result.data.insight);
+                setLastProvider(result.data.provider === 'ollama' ? 'Ollama' : 'Gemini');
                 await fetchInsights();
             } else {
                 setError(result.error || 'Failed to generate insight');
@@ -135,8 +137,8 @@ export function AntigravityInsights({ database, schema, table }: AntigravityInsi
                     <div className="flex items-center gap-2">
                         <Sparkles className="w-5 h-5 text-indigo-600" />
                         <h3 className="font-semibold text-slate-800">Antigravity AI Insights</h3>
-                        <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">
-                            Powered by Gemini
+                        <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full" id="ai-provider-badge">
+                            Powered by {lastProvider}
                         </span>
                     </div>
                     <Button
