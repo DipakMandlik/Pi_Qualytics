@@ -11,13 +11,24 @@ import { retryQuery } from '@/lib/retry';
 import { cache, CacheTTL, generateCacheKey } from '@/lib/cache';
 
 /**
+/**
  * GET /api/dq/critical-failed-records
  * Fetches count of critical failed records for CURRENT_DATE
  * Falls back to most recent date if no data for today
  */
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
-  const endpoint = '/api/dq/critical-failed-records';
+  const { searchParams } = new URL(request.url);
+  const dateParam = searchParams.get('date');
+  const endpoint = `/api/dq/critical-failed-records?date=${dateParam || 'default'}`;
+
+  // Date validation
+  let dateFilter = 'CURRENT_DATE';
+  if (dateParam) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+      dateFilter = `'${dateParam}'::DATE`;
+    }
+  }
 
   try {
     logger.logApiRequest(endpoint, 'GET');
@@ -47,49 +58,38 @@ export async function GET(request: NextRequest) {
     const connection = await snowflakePool.getConnection(config);
     await ensureConnectionContext(connection, config);
 
-    // Try to get critical failed records for current date first
-    const todayCriticalQuery = `
-      SELECT
-          COUNT(*) AS critical_failed_records
-        FROM DATA_QUALITY_DB.DQ_METRICS.DQ_FAILED_RECORDS
-        WHERE IS_CRITICAL = TRUE
-          AND DETECTED_TS::DATE = (
-            SELECT MAX(DETECTED_TS::DATE)
-            FROM DATA_QUALITY_DB.DQ_METRICS.DQ_FAILED_RECORDS
-            WHERE IS_CRITICAL = TRUE
-          )
+    // 1. Aggregate Critical Failed Records for the Target Date
+    const query = `
+      SELECT 
+          COUNT(f.FAILURE_ID) as critical_failed_records,
+          MAX(r.START_TS) as last_scan_ts,
+          MAX(r.RUN_ID) as latest_run_id
+      FROM DATA_QUALITY_DB.DQ_METRICS.DQ_FAILED_RECORDS f
+      JOIN DATA_QUALITY_DB.DQ_METRICS.DQ_RUN_CONTROL r ON f.RUN_ID = r.RUN_ID
+      WHERE f.IS_CRITICAL = TRUE
+        AND r.START_TS::DATE = ${dateFilter}
+        AND r.RUN_STATUS LIKE 'COMPLETED%'
     `;
 
-    const todayResult = await executeQuery(connection, todayCriticalQuery);
-    let criticalFailedRecords = null;
+    const queryResult = await executeQuery(connection, query);
+    let criticalFailedRecords = 0;
+    let runTimestamp = null;
+    let latestRunId = null;
 
     if (
-      todayResult.rows.length > 0 &&
-      todayResult.rows[0][0] !== null &&
-      todayResult.rows[0][0] > 0
+      queryResult.rows.length > 0 &&
+      queryResult.rows[0][0] !== null
     ) {
-      criticalFailedRecords = todayResult.rows[0][0];
-    } else {
-      // Fallback to most recent date
-      const fallbackQuery = `
-        
-        SELECT
-            COUNT(*) AS critical_failed_records
-        FROM DATA_QUALITY_DB.DQ_METRICS.DQ_FAILED_RECORDS
-        WHERE IS_CRITICAL = TRUE
-            AND DETECTED_TS::DATE = CURRENT_DATE
-      `;
-
-      const fallbackResult = await executeQuery(connection, fallbackQuery);
-      if (
-        fallbackResult.rows.length > 0 &&
-        fallbackResult.rows[0][0] !== null
-      ) {
-        criticalFailedRecords = fallbackResult.rows[0][0];
-      }
+      criticalFailedRecords = queryResult.rows[0][0];
+      runTimestamp = queryResult.rows[0][1];
+      latestRunId = queryResult.rows[0][2];
     }
 
-    const result = { criticalFailedRecords: criticalFailedRecords || 0 };
+    const result = {
+      criticalFailedRecords: Number(criticalFailedRecords),
+      summaryDate: runTimestamp,
+      runId: latestRunId
+    };
     cache.set(cacheKey, result, CacheTTL.QUICK_METRICS);
     logger.logApiResponse(endpoint, true, Date.now() - startTime);
 

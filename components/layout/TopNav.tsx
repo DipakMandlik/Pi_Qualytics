@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Search, Bell, ChevronDown, Database, Home, BarChart3, Brain, Shield, Settings, FileText, Activity } from 'lucide-react';
+import { Search, Bell, ChevronDown, Database, Home, BarChart3, Brain, Shield, Settings, FileText, Activity, BookOpen } from 'lucide-react';
 import { Button } from '../ui/button';
 import { ConnectionDialog } from '../ConnectionDialog';
 
@@ -17,6 +17,7 @@ export function TopNav() {
         { href: '/data', label: 'Data', icon: BarChart3 },
         { href: '/intelligence', label: 'Intelligence', icon: Brain },
         { href: '/governance', label: 'Governance', icon: Shield },
+        { href: '/evaluation', label: 'Evaluation', icon: BookOpen },
         { href: '/reporting', label: 'Reporting', icon: FileText },
         { href: '/admin', label: 'Admin', icon: Settings },
     ];
@@ -31,7 +32,7 @@ export function TopNav() {
             <header className="h-16 bg-white border-b border-gray-200 flex items-center px-6 flex-shrink-0 sticky top-0 z-50">
                 <div className="flex items-center justify-between w-full max-w-[1920px] mx-auto">
                     {/* Left: Logo + Brand */}
-                    <div className="flex items-center gap-8">
+                    <div className="flex items-center gap-4">
                         <Link href="/" className="flex items-center gap-3">
                             <Image
                                 src="/PBT_logo.jpg"
@@ -41,7 +42,7 @@ export function TopNav() {
                                 className="h-10 w-auto object-contain"
                                 priority
                             />
-                            <span className="text-xl font-semibold text-gray-900 border-l border-gray-300 pl-3 ml-1">
+                            <span className="text-xl font-semibold text-gray-900 border-l border-gray-300 pl-2 ml-1">
                                 Pi-Qualytics
                             </span>
                         </Link>
@@ -56,7 +57,7 @@ export function TopNav() {
                                         key={item.href}
                                         href={item.href}
                                         className={`
-                                            flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all
+                                            flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all
                                             ${active
                                                 ? 'bg-blue-50 text-blue-600'
                                                 : 'text-gray-700 hover:bg-gray-100 hover:text-blue-600'

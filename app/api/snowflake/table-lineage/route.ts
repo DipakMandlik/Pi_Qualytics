@@ -41,8 +41,8 @@ export async function GET(request: NextRequest) {
         UPSTREAM_DATABASE, 
         UPSTREAM_SCHEMA, 
         UPSTREAM_TABLE,
-        TRANSFORMATION_TYPE,
-        SOURCE_CODE
+        LINEAGE_TYPE,
+        TRANSFORMATION_LOGIC
       FROM DATA_QUALITY_DB.DQ_METRICS.DATA_LINEAGE
       WHERE DOWNSTREAM_DATABASE = '${dbName}' 
       AND DOWNSTREAM_SCHEMA = '${schemaName}' 
@@ -56,8 +56,8 @@ export async function GET(request: NextRequest) {
         DOWNSTREAM_DATABASE, 
         DOWNSTREAM_SCHEMA, 
         DOWNSTREAM_TABLE,
-        TRANSFORMATION_TYPE,
-        SOURCE_CODE
+        LINEAGE_TYPE,
+        TRANSFORMATION_LOGIC
       FROM DATA_QUALITY_DB.DQ_METRICS.DATA_LINEAGE
       WHERE UPSTREAM_DATABASE = '${dbName}' 
       AND UPSTREAM_SCHEMA = '${schemaName}' 

@@ -7,6 +7,7 @@ import { retryQuery } from '@/lib/retry';
 import { cache, CacheTTL, generateCacheKey } from '@/lib/cache';
 
 /**
+/**
  * GET /api/dq/total-checks
  * Fetches total checks executed for CURRENT_DATE
  * Falls back to most recent date if no data for today
@@ -15,7 +16,17 @@ import { cache, CacheTTL, generateCacheKey } from '@/lib/cache';
  */
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
-  const endpoint = '/api/dq/total-checks';
+  const { searchParams } = new URL(request.url);
+  const dateParam = searchParams.get('date');
+  const endpoint = `/api/dq/total-checks?date=${dateParam || 'default'}`;
+
+  // Date validation / SQL injection protection
+  let dateFilter = 'CURRENT_DATE';
+  if (dateParam) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+      dateFilter = `'${dateParam}'::DATE`;
+    }
+  }
 
   try {
     logger.logApiRequest(endpoint, 'GET');
@@ -44,48 +55,39 @@ export async function GET(request: NextRequest) {
     await ensureConnectionContext(connection, config);
 
     const result = await retryQuery(async () => {
-      const todayChecksQuery = `
-        SELECT
-          START_TS::DATE AS check_date,
-          SUM(TOTAL_CHECKS) AS total_checks_executed,
-          MAX(START_TS) as last_execution_ts
+      // 1. Aggregate Total Checks for the Target Date
+      const query = `
+        SELECT 
+          SUM(TOTAL_CHECKS) as daily_total,
+          MAX(START_TS) as last_scan_ts,
+          MAX(RUN_ID) as latest_run_id
         FROM DATA_QUALITY_DB.DQ_METRICS.DQ_RUN_CONTROL
-        WHERE START_TS::DATE = CURRENT_DATE
-        GROUP BY START_TS::DATE
+        WHERE START_TS::DATE = ${dateFilter}
+          AND RUN_STATUS LIKE 'COMPLETED%'
       `;
 
-      const todayResult = await executeQuery(connection, todayChecksQuery);
-      let totalChecks = null;
-      let checkDate = null;
-      let lastExecution = null;
+      const result = await executeQuery(connection, query);
 
-      if (todayResult.rows.length > 0 && todayResult.rows[0][1] !== null) {
-        checkDate = todayResult.rows[0][0];
-        totalChecks = todayResult.rows[0][1];
-        lastExecution = todayResult.rows[0][2];
-      } else {
-        const fallbackQuery = `
-          SELECT
-            START_TS::DATE AS check_date,
-            SUM(TOTAL_CHECKS) AS total_checks_executed,
-            MAX(START_TS) as last_execution_ts
-          FROM DATA_QUALITY_DB.DQ_METRICS.DQ_RUN_CONTROL
-          WHERE START_TS::DATE = (
-            SELECT MAX(START_TS::DATE)
-            FROM DATA_QUALITY_DB.DQ_METRICS.DQ_RUN_CONTROL
-          )
-          GROUP BY START_TS::DATE
-        `;
-
-        const fallbackResult = await executeQuery(connection, fallbackQuery);
-        if (fallbackResult.rows.length > 0 && fallbackResult.rows[0][1] !== null) {
-          checkDate = fallbackResult.rows[0][0];
-          totalChecks = fallbackResult.rows[0][1];
-          lastExecution = fallbackResult.rows[0][2];
-        }
+      if (result.rows.length === 0 || result.rows[0][0] === null) {
+        return {
+          hasData: false,
+          totalChecks: 0,
+          checkDate: null,
+          lastExecution: null
+        };
       }
 
-      return { totalChecks: totalChecks || 0, checkDate, lastExecution };
+      const totalChecks = result.rows[0][0] || 0;
+      const lastRunTs = result.rows[0][1];
+      const latestRunId = result.rows[0][2];
+
+      return {
+        hasData: true,
+        totalChecks: Number(totalChecks),
+        checkDate: lastRunTs, // Using latest timestamp as date reference
+        lastExecution: lastRunTs,
+        runId: latestRunId
+      };
     }, 'total-checks');
 
     cache.set(cacheKey, result, CacheTTL.KPI_METRICS);

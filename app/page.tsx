@@ -7,6 +7,13 @@ import { format } from 'date-fns';
 import { Search, Bell, ChevronDown, Play, FileText, Calendar, Clock, Loader2, Gauge, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { CircularMetricCard } from '@/components/dashboard/CircularMetricCard';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { TopNav } from '@/components/layout/TopNav';
@@ -32,6 +39,7 @@ export default function HomePage() {
   const [slaBreaches, setSlaBreaches] = useState(0);
   const [riskLevel, setRiskLevel] = useState<'Low' | 'Medium' | 'High'>('Low');
   const [attentionItems, setAttentionItems] = useState<Array<{ severity: string; message: string; icon: string }>>([]);
+  const [hasData, setHasData] = useState(true); // Default to true to prevent flash
   const [isLoading, setIsLoading] = useState(true);
 
   // Update date on mount and every minute
@@ -50,13 +58,24 @@ export default function HomePage() {
     const fetchData = async () => {
       setIsLoading(true);
       try {
+        // Calculate query date
+        const queryDate = dateFilter === 'yesterday'
+          ? (() => {
+            const d = new Date();
+            d.setDate(d.getDate() - 1);
+            return d.toISOString().split('T')[0];
+          })()
+          : ''; // Empty for today/default
+
+        const queryParam = queryDate ? `?date=${queryDate}` : '';
+
         // Fetch all metrics in parallel
         const [scoreRes, checksRes, failedRes, slaRes, anomaliesRes] = await Promise.all([
-          fetch('/api/dq/overall-score'),
-          fetch('/api/dq/total-checks'),
-          fetch('/api/dq/failed-checks'),
-          fetch('/api/dq/sla-compliance'),
-          fetch('/api/dq/critical-failed-records'),
+          fetch(`/api/dq/overall-score${queryParam}`),
+          fetch(`/api/dq/total-checks${queryParam}`),
+          fetch(`/api/dq/failed-checks${queryParam}`),
+          fetch(`/api/dq/sla-compliance${queryParam}`),
+          fetch(`/api/dq/critical-failed-records${queryParam}`),
         ]);
 
         const [scoreData, checksData, failedData, slaData, anomaliesData] = await Promise.all([
@@ -67,101 +86,135 @@ export default function HomePage() {
           anomaliesRes.json(),
         ]);
 
-        // Update Quality Score
-        if (scoreData.success && scoreData.data) {
-          let score = scoreData.data.overallScore;
-          if (score > 0 && score <= 1) score = score * 100;
-          setQualityScore(Math.round(score));
+        // Check if we have data (Strict Day-Wise Check)
+        // We use overall-score logic: if it returns hasData=false, assume no scan for this day.
+        // Or if totalChecks returns hasData=false.
+        const dataExists = (scoreData.success && scoreData.data?.hasData) || (checksData.success && checksData.data?.hasData);
+        setHasData(!!dataExists);
 
-          // Determine status
-          if (score >= 90) setQualityStatus('Excellent');
-          else if (score >= 75) setQualityStatus('Good');
-          else if (score >= 60) setQualityStatus('Fair');
-          else setQualityStatus('Poor');
-        }
+        if (!dataExists) {
+          // Reset metrics to 0 or safe defaults
+          setQualityScore(0);
+          setQualityStatus('Unknown');
+          setActiveChecks(0);
+          setFailedToday(0);
+          setPassedToday(0);
+          setCoveragePercent(0);
+          setCoverageStrength('Unknown');
+          setSlaBreaches(0);
+          setOpenAnomalies(0);
+          setAttentionItems([]);
+          // We can allow Last Scan Time to persist if the API returns it?
+          // Actually total-checks API might return null if no data found strictly.
+          // But usually last scan time comes from the RUN_CONTROL table.
+          // If we filtered strict by date, and no rows, we won't get last scan time for *that* day.
+          // Correct behavior: "No scans executed today"
+          setLastScanTime('No scans executed on this date');
+        } else {
+          // Process Data as Normal
+          // Update Quality Score
+          if (scoreData.success && scoreData.data) {
+            let score = scoreData.data.overallScore;
+            if (score > 0 && score <= 1) score = score * 100;
+            setQualityScore(Math.round(score));
 
-        // Update Total Checks and Last Scan Time
-        if (checksData.success && checksData.data) {
-          setActiveChecks(checksData.data.totalChecks || 0);
+            // Determine status
+            if (score >= 90) setQualityStatus('Excellent');
+            else if (score >= 75) setQualityStatus('Good');
+            else if (score >= 60) setQualityStatus('Fair');
+            else setQualityStatus('Poor');
+          }
 
-          if (checksData.data.lastExecution) {
-            try {
-              const lastRun = new Date(checksData.data.lastExecution);
-              setLastScanTime(`Today at ${format(lastRun, 'HH:mm')} IST`);
-            } catch (e) {
+          // Update Total Checks and Last Scan Time
+          if (checksData.success && checksData.data) {
+            setActiveChecks(checksData.data.totalChecks || 0);
+
+            if (checksData.data.lastExecution) {
+              try {
+                const lastRun = new Date(checksData.data.lastExecution);
+                // Format: "Jan 22, 2026 at 14:30"
+                setLastScanTime(`${format(lastRun, 'MMM d, yyyy')} at ${format(lastRun, 'HH:mm')}`);
+              } catch (e) {
+                setLastScanTime('Unknown');
+              }
+            } else {
               setLastScanTime('Unknown');
             }
-          } else {
-            setLastScanTime('Not executed today');
           }
-        }
 
-        // Update Failed Checks
-        if (failedData.success && failedData.data) {
-          const failed = failedData.data.totalFailedChecks || 0;
-          setFailedToday(failed);
-          const total = checksData.data?.totalChecks || 0;
-          const passed = total - failed;
-          setPassedToday(passed);
+          // Update Failed Checks
+          if (failedData.success && failedData.data) {
+            const failed = failedData.data.totalFailedChecks || 0;
+            setFailedToday(failed);
+            const total = checksData.data?.totalChecks || 0;
+            const passed = total - failed;
+            setPassedToday(passed);
 
-          // Calculate coverage
-          if (total > 0) {
-            const coverage = ((passed / total) * 100);
-            setCoveragePercent(Math.round(coverage * 10) / 10);
+            // Calculate coverage
+            if (total > 0) {
+              const coverage = ((passed / total) * 100);
+              setCoveragePercent(Math.round(coverage * 10) / 10);
 
-            if (coverage >= 90) setCoverageStrength('Strong');
-            else if (coverage >= 75) setCoverageStrength('Moderate');
-            else setCoverageStrength('Weak');
+              if (coverage >= 90) setCoverageStrength('Strong');
+              else if (coverage >= 75) setCoverageStrength('Moderate');
+              else setCoverageStrength('Weak');
+            } else {
+              setCoveragePercent(0);
+              setCoverageStrength('Weak');
+            }
           }
-        }
 
-        // Update SLA Compliance
-        if (slaData.success && slaData.data) {
-          const slaCompliance = slaData.data.slaCompliancePct || 100;
-          if (slaCompliance < 100) {
-            setSlaBreaches(Math.round((100 - slaCompliance) / 10)); // Estimate breaches
+          // Update SLA Compliance
+          if (slaData.success && slaData.data) {
+            const slaCompliance = slaData.data.slaCompliancePct || 100;
+            if (slaCompliance < 100) {
+              setSlaBreaches(Math.round((100 - slaCompliance) / 10)); // Estimate breaches
+            } else {
+              setSlaBreaches(0);
+            }
           }
-        }
 
-        // Update Anomalies
-        if (anomaliesData.success && anomaliesData.data) {
-          const anomalies = anomaliesData.data.criticalFailedRecords || 0;
-          setOpenAnomalies(anomalies);
+          // Update Anomalies
+          if (anomaliesData.success && anomaliesData.data) {
+            const anomalies = anomaliesData.data.criticalFailedRecords || 0;
+            setOpenAnomalies(anomalies);
 
-          // Determine risk level
-          if (anomalies > 10 || (slaData.data?.slaCompliancePct || 100) < 80) {
-            setRiskLevel('High');
-          } else if (anomalies > 5 || (slaData.data?.slaCompliancePct || 100) < 90) {
-            setRiskLevel('Medium');
-          } else {
-            setRiskLevel('Low');
+            // Determine risk level
+            if (anomalies > 10 || (slaData.data?.slaCompliancePct || 100) < 80) {
+              setRiskLevel('High');
+            } else if (anomalies > 5 || (slaData.data?.slaCompliancePct || 100) < 90) {
+              setRiskLevel('Medium');
+            } else {
+              setRiskLevel('Low');
+            }
           }
+
+          // Build attention items
+          const items = [];
+          if (failedData.success && failedData.data && failedData.data.totalFailedChecks > 0) {
+            items.push({
+              severity: 'critical',
+              message: `${failedData.data.totalFailedChecks} checks failing across datasets`,
+              icon: '🔴'
+            });
+          }
+          if (slaData.success && slaData.data && slaData.data.slaCompliancePct < 100) {
+            items.push({
+              severity: 'warning',
+              message: `SLA compliance at ${Math.round(slaData.data.slaCompliancePct)}%`,
+              icon: '🟠'
+            });
+          }
+          if (anomaliesData.success && anomaliesData.data && anomaliesData.data.criticalFailedRecords > 0) {
+            items.push({
+              severity: 'info',
+              message: `${anomaliesData.data.criticalFailedRecords} critical records need attention`,
+              icon: '🔵'
+            });
+          }
+          setAttentionItems(items);
         }
 
-        // Build attention items from real data
-        const items = [];
-        if (failedData.success && failedData.data && failedData.data.totalFailedChecks > 0) {
-          items.push({
-            severity: 'critical',
-            message: `${failedData.data.totalFailedChecks} checks failing across datasets`,
-            icon: '🔴'
-          });
-        }
-        if (slaData.success && slaData.data && slaData.data.slaCompliancePct < 100) {
-          items.push({
-            severity: 'warning',
-            message: `SLA compliance at ${Math.round(slaData.data.slaCompliancePct)}%`,
-            icon: '🟠'
-          });
-        }
-        if (anomaliesData.success && anomaliesData.data && anomaliesData.data.criticalFailedRecords > 0) {
-          items.push({
-            severity: 'info',
-            message: `${anomaliesData.data.criticalFailedRecords} critical records need attention`,
-            icon: '🔵'
-          });
-        }
-        setAttentionItems(items);
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
       } finally {
@@ -170,7 +223,7 @@ export default function HomePage() {
     };
 
     fetchData();
-  }, [isConnected, refreshKey]);
+  }, [isConnected, refreshKey, dateFilter]);
 
   const handleRunScan = async () => {
     setIsScanning(true);
@@ -212,20 +265,21 @@ export default function HomePage() {
             {/* Header */}
             <div className="flex items-center justify-between mb-8">
               <div>
-                <h1 className="text-3xl font-bold text-gray-900">Data Quality — Today</h1>
+                <h1 className="text-3xl font-bold text-gray-900">Daily Data Quality Overview</h1>
                 <p className="text-sm text-gray-500 mt-1">
-                  {format(currentDate, 'EEEE, d MMMM yyyy')}
+                  {/* Show Scan Date if available, else Current Date */}
+                  {hasData && lastScanTime.includes('at')
+                    ? lastScanTime.replace('at ', '')
+                    : 'No active scan data available'}
                 </p>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  Overall data quality health across all monitored datasets
+                  Metrics aggregated from all scans for the selected date
                 </p>
               </div>
               <div className="flex items-center gap-3">
-                <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium bg-white">
-                  <Calendar className="h-4 w-4 text-gray-500" />
-                  Today
-                  <ChevronDown className="h-4 w-4 text-gray-500" />
-                </button>
+
+                {/* Removed Date Filter as we strictly show Latest Scan */}
+
                 <div className="flex items-center gap-2 text-sm text-gray-500 bg-gray-50 px-3 py-2 rounded-lg border border-gray-100">
                   <Clock className="h-4 w-4" />
                   Last Scan: {lastScanTime}
@@ -249,45 +303,79 @@ export default function HomePage() {
                   )}
                 </Button>
 
-                <Button variant="outline" className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  className="flex items-center gap-2"
+                  onClick={() => window.open('/api/reports/daily-pdf', '_blank')}
+                >
                   <FileText className="h-4 w-4" />
-                  View Reports
+                  Download Daily Report
                 </Button>
               </div>
             </div>
 
             {/* KPI Cards Section */}
-            <div className="grid grid-cols-3 gap-6 mb-8">
-              {/* Card 1: Overall Quality Health */}
-              <CircularMetricCard
-                title="Overall Quality Score"
-                value={qualityScore}
-                total={activeChecks}
-                icon={Gauge}
-                color="green"
-                trend={{ value: 2.1, label: 'vs last week', isPositive: true }}
-              />
+            {!hasData ? (
+              <div className="flex flex-col items-center justify-center p-12 bg-gray-50 border border-gray-200 border-dashed rounded-xl mb-8">
+                <div className="bg-gray-100 p-4 rounded-full mb-4">
+                  <Calendar className="h-8 w-8 text-gray-400" />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-1">No Scans Executed {dateFilter === 'today' ? 'Today' : 'On This Date'}</h3>
+                <p className="text-sm text-gray-500 mb-6 max-w-md text-center">
+                  There are no data quality scan results available for the selected date.
+                  Run a new scan to see metrics here.
+                </p>
+                <Button
+                  onClick={handleRunScan}
+                  disabled={isScanning || !isConnected}
+                  className={`${isScanning ? 'bg-gray-100 text-gray-500' : 'bg-gray-900 text-white hover:bg-gray-800'} flex items-center gap-2`}
+                >
+                  {isScanning ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Scanning...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="h-4 w-4" />
+                      Run Scan Now
+                    </>
+                  )}
+                </Button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-6 mb-8">
+                {/* Card 1: Overall Quality Health */}
+                <CircularMetricCard
+                  title="Overall Quality Score"
+                  value={qualityScore}
+                  total={activeChecks}
+                  icon={Gauge}
+                  color="green"
+                  trend={{ value: 2.1, label: 'vs last week', isPositive: true }}
+                />
 
-              {/* Card 2: Coverage & Completeness */}
-              <CircularMetricCard
-                title="Coverage Score"
-                value={coveragePercent}
-                total={activeChecks}
-                icon={ShieldCheck}
-                color="blue"
-                trend={{ value: 5.4, label: 'vs last week', isPositive: true }}
-              />
+                {/* Card 2: Coverage & Completeness */}
+                <CircularMetricCard
+                  title="Coverage Score"
+                  value={coveragePercent}
+                  total={activeChecks}
+                  icon={ShieldCheck}
+                  color="blue"
+                  trend={{ value: 5.4, label: 'vs last week', isPositive: true }}
+                />
 
-              {/* Card 3: Risk & Validity */}
-              <CircularMetricCard
-                title="Validity Score"
-                value={Math.round(100 - (failedToday / (passedToday + failedToday || 1)) * 100) || 0}
-                total={failedToday}
-                icon={AlertTriangle}
-                color="amber"
-                trend={{ value: 1.2, label: 'vs last week', isPositive: false }}
-              />
-            </div>
+                {/* Card 3: Risk & Validity */}
+                <CircularMetricCard
+                  title="Validity Score"
+                  value={Math.round(100 - (failedToday / (passedToday + failedToday || 1)) * 100) || 0}
+                  total={failedToday}
+                  icon={AlertTriangle}
+                  color="amber"
+                  trend={{ value: 1.2, label: 'vs last week', isPositive: false }}
+                />
+              </div>
+            )}
 
             {/* What Needs Attention */}
             <Card className="border-gray-200">

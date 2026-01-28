@@ -18,7 +18,19 @@ import { cache, CacheTTL, generateCacheKey } from '@/lib/cache';
  */
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
-  const endpoint = '/api/dq/overall-score';
+  const { searchParams } = new URL(request.url);
+  const dateParam = searchParams.get('date');
+
+  // If date is provided, validate it
+  let targetDate = 'CURRENT_DATE';
+  if (dateParam) {
+    // Simple validation YYYY-MM-DD
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+      targetDate = `'${dateParam}'::DATE`;
+    }
+  }
+
+  const endpoint = `/api/dq/overall-score?date=${dateParam || 'today'}`;
 
   try {
     logger.logApiRequest(endpoint, 'GET');
@@ -64,69 +76,46 @@ export async function GET(request: NextRequest) {
     const queryStartTime = Date.now();
 
     const result = await retryQuery(async () => {
-      // Try to get today's score first, fallback to most recent date
-      const todayScoreQuery = `
-        SELECT
-          SUMMARY_DATE,
-          ROUND(AVG(DQ_SCORE), 2) AS overall_dq_score
-        FROM DATA_QUALITY_DB.DQ_METRICS.DQ_DAILY_SUMMARY
-        WHERE SUMMARY_DATE = CURRENT_DATE
-        GROUP BY SUMMARY_DATE
+      // 1. Aggregate Score for the Target Date
+      // Weighted Average Strategy: Total Passed / Total Checks across all runs
+      const query = `
+        SELECT 
+            SUM(TOTAL_CHECKS) as daily_checks,
+            SUM(FAILED_CHECKS) as daily_failed,
+            MAX(START_TS) as last_scan_ts,
+            MAX(RUN_ID) as latest_run_id
+        FROM DATA_QUALITY_DB.DQ_METRICS.DQ_RUN_CONTROL
+        WHERE START_TS::DATE = ${targetDate}
+        AND RUN_STATUS LIKE 'COMPLETED%'
       `;
 
-      const todayResult = await executeQuery(connection, todayScoreQuery);
+      const result = await executeQuery(connection, query);
 
-      let currentScore = null;
-      let currentDate = null;
-
-      if (todayResult.rows.length > 0 && todayResult.rows[0][1] !== null) {
-        currentDate = todayResult.rows[0][0];
-        currentScore = todayResult.rows[0][1];
-      } else {
-        // Fallback to most recent date
-        const fallbackQuery = `
-          SELECT
-            SUMMARY_DATE,
-            ROUND(AVG(DQ_SCORE), 2) AS overall_dq_score
-          FROM DATA_QUALITY_DB.DQ_METRICS.DQ_DAILY_SUMMARY
-          WHERE SUMMARY_DATE = (SELECT MAX(SUMMARY_DATE) FROM DATA_QUALITY_DB.DQ_METRICS.DQ_DAILY_SUMMARY)
-          GROUP BY SUMMARY_DATE
-        `;
-        const fallbackResult = await executeQuery(connection, fallbackQuery);
-        if (fallbackResult.rows.length > 0 && fallbackResult.rows[0][1] !== null) {
-          currentDate = fallbackResult.rows[0][0];
-          currentScore = fallbackResult.rows[0][1];
-        }
+      if (result.rows.length === 0 || result.rows[0][0] === null) {
+        return {
+          hasData: false,
+          overallScore: 0,
+          previousScore: null,
+          scoreDifference: undefined,
+          summaryDate: null
+        };
       }
 
-      // Calculate previous day's score
-      let previousScore = null;
-      let scoreDiff = undefined;
+      const totalChecks = Number(result.rows[0][0] || 0);
+      const failedChecks = Number(result.rows[0][1] || 0);
+      const lastRunTs = result.rows[0][2];
+      const latestRunId = result.rows[0][3];
 
-      if (currentDate && currentScore !== null) {
-        const dateStr = currentDate instanceof Date
-          ? currentDate.toISOString().split('T')[0]
-          : String(currentDate).split('T')[0];
-
-        const previousDayQuery = `
-          SELECT
-            ROUND(AVG(DQ_SCORE), 2) AS overall_dq_score
-          FROM DATA_QUALITY_DB.DQ_METRICS.DQ_DAILY_SUMMARY
-          WHERE SUMMARY_DATE = DATEADD(day, -1, '${dateStr}'::DATE)
-        `;
-
-        const previousResult = await executeQuery(connection, previousDayQuery);
-        if (previousResult.rows.length > 0 && previousResult.rows[0][0] !== null) {
-          previousScore = previousResult.rows[0][0];
-          scoreDiff = Math.round((currentScore - previousScore) * 10) / 10;
-        }
-      }
+      const passedChecks = Math.max(0, totalChecks - failedChecks);
+      const overallScore = totalChecks > 0 ? (passedChecks / totalChecks) : 0;
 
       return {
-        overallScore: currentScore,
-        previousScore: previousScore,
-        scoreDifference: scoreDiff,
-        summaryDate: currentDate,
+        overallScore: overallScore, // API expects 0.0 - 1.0
+        previousScore: null,
+        scoreDifference: undefined,
+        summaryDate: lastRunTs,
+        hasData: true,
+        runId: latestRunId
       };
     }, 'overall-score');
 

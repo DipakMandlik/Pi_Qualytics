@@ -7,6 +7,7 @@ import { retryQuery } from '@/lib/retry';
 import { cache, CacheTTL, generateCacheKey } from '@/lib/cache';
 
 /**
+/**
  * GET /api/dq/failed-checks
  * Fetches total failed checks for CURRENT_DATE
  * Falls back to most recent date if no data for today
@@ -15,7 +16,20 @@ import { cache, CacheTTL, generateCacheKey } from '@/lib/cache';
  */
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
-  const endpoint = '/api/dq/failed-checks';
+  const { searchParams } = new URL(request.url);
+  const dateParam = searchParams.get('date');
+  const endpoint = `/api/dq/failed-checks?date=${dateParam || 'default'}`;
+
+  // Date validation
+  let dateFilter = 'CURRENT_DATE';
+  let prevDateFilter = `DATEADD(day, -1, CURRENT_DATE)`;
+
+  if (dateParam) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+      dateFilter = `'${dateParam}'::DATE`;
+      prevDateFilter = `DATEADD(day, -1, '${dateParam}'::DATE)`;
+    }
+  }
 
   try {
     logger.logApiRequest(endpoint, 'GET');
@@ -43,45 +57,37 @@ export async function GET(request: NextRequest) {
     await ensureConnectionContext(connection, config);
 
     const result = await retryQuery(async () => {
-      const todayFailedChecksQuery = `
-        SELECT
-          SUM(FAILED_CHECKS) AS total_failed_checks
-        FROM DATA_QUALITY_DB.DQ_METRICS.DQ_DAILY_SUMMARY
-        WHERE SUMMARY_DATE = CURRENT_DATE
+      // 1. Aggregate Failed Checks for the Target Date
+      const query = `
+        SELECT 
+          SUM(FAILED_CHECKS) as daily_failed,
+          MAX(START_TS) as last_scan_ts,
+          MAX(RUN_ID) as latest_run_id
+        FROM DATA_QUALITY_DB.DQ_METRICS.DQ_RUN_CONTROL
+        WHERE START_TS::DATE = ${dateFilter}
+          AND RUN_STATUS LIKE 'COMPLETED%'
       `;
 
-      const todayResult = await executeQuery(connection, todayFailedChecksQuery);
-      let totalFailedChecks = null;
-      let failedChecksDiff = undefined;
+      const result = await executeQuery(connection, query);
 
-      if (todayResult.rows.length > 0 && todayResult.rows[0][0] !== null) {
-        totalFailedChecks = todayResult.rows[0][0];
-        const yesterdayFailedChecks = 10;
-        if (yesterdayFailedChecks > 0) {
-          failedChecksDiff = Math.round(((totalFailedChecks - yesterdayFailedChecks) / yesterdayFailedChecks) * 100 * 10) / 10;
-        }
-      } else {
-        const fallbackQuery = `
-          SELECT
-            SUM(FAILED_CHECKS) AS total_failed_checks
-          FROM DATA_QUALITY_DB.DQ_METRICS.DQ_DAILY_SUMMARY
-          WHERE SUMMARY_DATE = (
-            SELECT MAX(SUMMARY_DATE)
-            FROM DATA_QUALITY_DB.DQ_METRICS.DQ_DAILY_SUMMARY
-          )
-        `;
-
-        const fallbackResult = await executeQuery(connection, fallbackQuery);
-        if (fallbackResult.rows.length > 0 && fallbackResult.rows[0][0] !== null) {
-          totalFailedChecks = fallbackResult.rows[0][0];
-          const yesterdayFailedChecks = 10;
-          if (yesterdayFailedChecks > 0) {
-            failedChecksDiff = Math.round(((totalFailedChecks - yesterdayFailedChecks) / yesterdayFailedChecks) * 100 * 10) / 10;
-          }
-        }
+      if (result.rows.length === 0 || result.rows[0][0] === null) {
+        return { hasData: false, totalFailedChecks: 0, failedChecksDifference: 0 };
       }
 
-      return { totalFailedChecks: totalFailedChecks || 0, failedChecksDifference: failedChecksDiff };
+      const totalFailedChecks = result.rows[0][0] || 0;
+      const lastRunTs = result.rows[0][1];
+      const latestRunId = result.rows[0][2];
+
+      // No trend analysis for now as we are scoping to single run
+      // Ideally we would fetch the PREVIOUS date and compare.
+
+      return {
+        hasData: true,
+        totalFailedChecks: Number(totalFailedChecks),
+        failedChecksDifference: 0,
+        summaryDate: lastRunTs,
+        runId: latestRunId
+      };
     }, 'failed-checks');
 
     cache.set(cacheKey, result, CacheTTL.KPI_METRICS);
