@@ -3,7 +3,7 @@
  * Supports standard cron syntax and schedule type conversion
  */
 
-import parser from 'cron-parser';
+import { CronExpressionParser } from 'cron-parser';
 
 export interface CronSchedule {
     expression: string;
@@ -17,7 +17,7 @@ export interface CronSchedule {
  */
 export function validateCronExpression(expression: string): boolean {
     try {
-        parser.parseExpression(expression);
+        CronExpressionParser.parse(expression);
         return true;
     } catch (error) {
         return false;
@@ -29,7 +29,7 @@ export function validateCronExpression(expression: string): boolean {
  */
 export function getNextRunTime(expression: string, timezone: string = 'UTC'): Date {
     try {
-        const interval = parser.parseExpression(expression, {
+        const interval = CronExpressionParser.parse(expression, {
             currentDate: new Date(),
             tz: timezone,
         });
@@ -48,7 +48,7 @@ export function getNextRunTimes(
     timezone: string = 'UTC'
 ): Date[] {
     try {
-        const interval = parser.parseExpression(expression, {
+        const interval = CronExpressionParser.parse(expression, {
             currentDate: new Date(),
             tz: timezone,
         });

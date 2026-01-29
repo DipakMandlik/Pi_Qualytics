@@ -74,7 +74,7 @@ export async function executeWithOllama(
             assetId,
             llmModel: router.getConfig().model,
             executionStatus: 'PLAN_ERROR',
-            errorMessage: result.error.message
+            errorMessage: result.error?.message
         });
 
         return result;
@@ -112,7 +112,7 @@ export async function executeWithOllama(
                 llmModel: router.getConfig().model,
                 plan,
                 executionStatus: 'PLAN_ERROR',
-                errorMessage: result.error.message,
+                errorMessage: result.error?.message,
                 llmResponseTimeMs: timings.planGeneration
             });
 
@@ -164,7 +164,7 @@ export async function executeWithOllama(
             plan,
             validationError: validation.errors.join(', '),
             executionStatus: 'VALIDATION_ERROR',
-            errorMessage: result.error.message,
+            errorMessage: result.error?.message,
             llmResponseTimeMs: timings.planGeneration
         });
 

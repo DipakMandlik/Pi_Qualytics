@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
     try {
         const config = getServerConfig();
-        const conn = await snowflakePool.getConnection(config);
+        const conn = await snowflakePool.getConnection(config!);
 
         const result = await new Promise<any[]>((resolve, reject) => {
             conn.execute({

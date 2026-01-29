@@ -74,7 +74,7 @@ export async function retryWithBackoff<T>(
             const delay = calculateDelay(attempt, opts);
             logger.warn(
                 `Attempt ${attempt}/${opts.maxAttempts} failed, retrying in ${delay}ms`,
-                { context, error: error?.message }
+                { context, error: (error as any)?.message }
             );
 
             await sleep(delay);

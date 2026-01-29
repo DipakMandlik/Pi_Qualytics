@@ -181,8 +181,24 @@ export default function TableDetailsPage() {
       healthStatus: string;
       freshnessMinutes: number;
     };
-    upstream: Array<{ name: string; shortName: string; type: string }>;
-    downstream: Array<{ name: string; shortName: string; type: string }>;
+    upstream: Array<{
+      name: string;
+      shortName: string;
+      type: string;
+      schema?: string;
+      transformationType?: string;
+      sourceCode?: string;
+      database?: string;
+    }>;
+    downstream: Array<{
+      name: string;
+      shortName: string;
+      type: string;
+      schema?: string;
+      transformationType?: string;
+      sourceCode?: string;
+      database?: string;
+    }>;
     impact: {
       level: string;
       summary: string;
@@ -475,6 +491,7 @@ export default function TableDetailsPage() {
         setObservabilitySchema({
           columnCount: metadataData.data.columnCount,
           nullableColumnCount: metadataData.data.nullableColumnCount,
+          columns: metadataData.data.columns,
         });
       }
 
@@ -486,10 +503,19 @@ export default function TableDetailsPage() {
 
       if (freshnessData.success && freshnessData.data) {
         setObservabilityFreshness({
-          lastUpdated: freshnessData.data.lastUpdated,
-          slaStatus: freshnessData.data.slaStatus,
-          freshnessDelayFormatted: freshnessData.data.freshnessDelayFormatted,
+          lastAlteredAt: freshnessData.data.lastUpdated,
+          lastAlteredFormatted: new Date(freshnessData.data.lastUpdated).toLocaleDateString("en-US", {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+          createdAt: freshnessData.data.created,
           createdFormatted: freshnessData.data.createdFormatted,
+          freshnessDelayMinutes: freshnessData.data.hoursSinceUpdate * 60,
+          freshnessDelayFormatted: freshnessData.data.freshnessDelayFormatted,
+          slaStatus: freshnessData.data.slaStatus,
         });
       }
 
@@ -510,6 +536,15 @@ export default function TableDetailsPage() {
 
       // Set load reliability (placeholder for now)
       setObservabilityLoads({
+        totalLoads: 0,
+        successfulLoads: 0,
+        failedLoads: 0,
+        successRate: null,
+        lastLoadTime: null,
+        lastLoadTimeFormatted: null,
+        rowCount: 0,
+        bytes: 0,
+        sizeFormatted: "0 B",
         loadHistoryAvailable: false,
       });
 
@@ -2058,8 +2093,8 @@ export default function TableDetailsPage() {
                             <p className="text-[10px] text-slate-500 mb-1">{up.schema}</p>
                             {up.transformationType && (
                               <span className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-medium tracking-wider ${up.transformationType === 'DIRECT' ? 'bg-emerald-50 text-emerald-600' :
-                                  up.transformationType === 'JOIN' ? 'bg-blue-50 text-blue-600' :
-                                    'bg-slate-100 text-slate-500'
+                                up.transformationType === 'JOIN' ? 'bg-blue-50 text-blue-600' :
+                                  'bg-slate-100 text-slate-500'
                                 }`}>
                                 {up.transformationType}
                               </span>
@@ -2098,8 +2133,8 @@ export default function TableDetailsPage() {
                             <p className="text-[10px] text-slate-500 mb-1">{down.schema}</p>
                             {down.transformationType && (
                               <span className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-medium tracking-wider ${down.transformationType === 'DIRECT' ? 'bg-emerald-50 text-emerald-600' :
-                                  down.transformationType === 'JOIN' ? 'bg-blue-50 text-blue-600' :
-                                    'bg-slate-100 text-slate-500'
+                                down.transformationType === 'JOIN' ? 'bg-blue-50 text-blue-600' :
+                                  'bg-slate-100 text-slate-500'
                                 }`}>
                                 {down.transformationType}
                               </span>

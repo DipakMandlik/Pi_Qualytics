@@ -257,7 +257,7 @@ export async function GET(request: NextRequest) {
         doc.end();
         const buffer = await pdfPromise;
 
-        return new NextResponse(buffer, {
+        return new NextResponse(buffer as any, {
             headers: {
                 'Content-Type': 'application/pdf',
                 'Content-Disposition': `attachment; filename="Daily_Data_Quality_Report.pdf"`,

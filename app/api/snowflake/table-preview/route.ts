@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
     const result = await new Promise<any>((resolve, reject) => {
       connection.execute({
         sqlText: query,
-        complete: (err, stmt, rows) => {
+        complete: (err: any, stmt: any, rows: any[]) => {
           if (err) {
             reject(err);
           } else {

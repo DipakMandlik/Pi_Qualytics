@@ -97,6 +97,37 @@ export async function GET(request: NextRequest) {
             const bytes = row.BYTES || 0;
             const bytesFormatted = formatBytes(bytes);
 
+            // Fetch columns details
+            const columnsQuery = `
+                SELECT 
+                    COLUMN_NAME, 
+                    DATA_TYPE, 
+                    IS_NULLABLE, 
+                    ORDINAL_POSITION
+                FROM ${database.toUpperCase()}.INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_SCHEMA = '${schema.toUpperCase()}'
+                  AND TABLE_NAME = '${table.toUpperCase()}'
+                  AND TABLE_CATALOG = '${database.toUpperCase()}'
+                ORDER BY ORDINAL_POSITION
+            `;
+
+            const columnsResult = await new Promise<any>((resolve, reject) => {
+                connection.execute({
+                    sqlText: columnsQuery,
+                    complete: (err: any, stmt: any, rows: any) => {
+                        if (err) reject(err);
+                        else resolve(rows);
+                    }
+                });
+            });
+
+            const columns = columnsResult.map((col: any) => ({
+                name: col.COLUMN_NAME,
+                dataType: col.DATA_TYPE,
+                isNullable: col.IS_NULLABLE === 'YES',
+                ordinalPosition: col.ORDINAL_POSITION
+            }));
+
             return NextResponse.json({
                 success: true,
                 data: {
@@ -107,6 +138,7 @@ export async function GET(request: NextRequest) {
                     lastAltered: row.LAST_ALTERED,
                     columnCount: row.COLUMN_COUNT || 0,
                     nullableColumnCount: row.NULLABLE_COLUMN_COUNT || 0,
+                    columns: columns,
                 },
             });
         }

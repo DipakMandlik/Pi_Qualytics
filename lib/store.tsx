@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { SnowflakeConfig } from './snowflake';
+import { SnowflakeConfig } from './snowflake-types';
 
 interface AppStoreContextType {
   snowflakeConfig: SnowflakeConfig | null;

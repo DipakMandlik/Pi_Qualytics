@@ -1,17 +1,10 @@
 // Lazy-load snowflake-sdk at runtime to avoid bundler/Turbopack issues
 let snowflake: any = null;
 
-export interface SnowflakeConfig {
-  account?: string;
-  accountUrl?: string;
-  username: string;
-  password?: string;
-  token?: string; // JWT/OAuth token
-  warehouse?: string; // Optional - can be set later
-  database?: string;  // Optional - can be set later
-  schema?: string;    // Optional - can be set later
-  role?: string;
-}
+import { SnowflakeConfig, QueryResult } from './snowflake-types';
+export type { SnowflakeConfig, QueryResult };
+
+
 
 
 export function extractAccountFromUrl(accountUrl: string): string {
@@ -45,11 +38,7 @@ export function extractAccountFromUrl(accountUrl: string): string {
   return account;
 }
 
-export interface QueryResult {
-  columns: string[];
-  rows: any[][];
-  rowCount: number;
-}
+
 
 /**
  * Creates a Snowflake connection using the provided configuration

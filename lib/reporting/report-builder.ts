@@ -283,7 +283,10 @@ export function buildDatasetReport(
 
     // Enrich failed checks with severity
     const failedChecksDetails = data.failedChecks.map(check => ({
-        ...check,
+        ruleName: check.ruleName,
+        status: check.checkStatus,
+        failedRecords: check.failedRecords,
+        timestamp: check.checkTimestamp,
         severity: determineSeverity(check.failedRecords),
     }));
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readFile } from 'fs/promises';
-import { executeQuery, executeQueryObjects, snowflakePool } from '@/lib/snowflake'; // Import both
+import { executeQuery, executeQueryObjects, snowflakePool } from '@/lib/snowflake';
 import { getServerConfig } from '@/lib/server-config';
 import path from 'path';
 import fs from 'fs';
@@ -11,14 +11,10 @@ import fs from 'fs';
 
 export async function GET(
     request: NextRequest,
-    { params }: { params: { reportId: string } }
-) { // Fix: params is awaited in newer Next.js but sync here works for now or await params if needed
-    // In Next.js 15 params promise is enforced, but I'll assume standard usage.
-    // However, clean usage `params` prop from argument.
-
-    // Note: In Next.js App Router, params is Promise in newer versions.
-    // Safest access:
-    const { reportId } = params;
+    context: { params: Promise<{ reportId: string }> }
+) {
+    // Await params in Next.js 15+
+    const { reportId } = await context.params;
 
     try {
         const config = getServerConfig();
@@ -32,7 +28,6 @@ export async function GET(
         const connection = await snowflakePool.getConnection(config);
 
         // 1. Get Report Details
-        // Use executeQueryObjects for reading
         const query = `
             SELECT FILE_PATH, FILE_FORMAT
             FROM DATA_QUALITY_DB.DB_METRICS.DQ_REPORTS
@@ -63,8 +58,7 @@ export async function GET(
         // 3. Read File
         const fileBuffer = await readFile(filePath);
 
-        // 4. Update Download Count (Async - don't block response)
-        // Use executeQuery for update
+        // 4. Update Download Count
         const updateSql = `
             UPDATE DATA_QUALITY_DB.DB_METRICS.DQ_REPORTS
             SET DOWNLOAD_COUNT = COALESCE(DOWNLOAD_COUNT, 0) + 1,
@@ -72,15 +66,12 @@ export async function GET(
             WHERE REPORT_ID = ?
         `;
 
-        // Fire and forget (or await if critical)
         await executeQuery(connection, updateSql, [reportId]);
 
         // 5. Serve File
         const contentType = format === 'csv' ? 'text/csv' : 'application/json';
         const filename = path.basename(filePath);
 
-        // Return standard Response for file download
-        // NextResponse is wrapper around Response
         return new NextResponse(fileBuffer, {
             headers: {
                 'Content-Type': contentType,
